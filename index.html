@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>COVID-19 Global Analytics Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f4f4f2;
+    --bg-tertiary: #eeecea;
+    --text-primary: #1a1a18;
+    --text-secondary: #666660;
+    --text-muted: #999993;
+    --border-light: rgba(0,0,0,0.08);
+    --border-medium: rgba(0,0,0,0.14);
+    --border-strong: rgba(0,0,0,0.22);
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --blue-50: #E6F1FB; --blue-100: #B5D4F4; --blue-400: #378ADD; --blue-600: #185FA5; --blue-900: #042C53;
+    --teal-50: #E1F5EE; --teal-100: #9FE1CB; --teal-400: #1D9E75; --teal-600: #0F6E56; --teal-900: #04342C;
+    --red-50: #FCEBEB; --red-400: #E24B4A; --red-600: #A32D2D;
+    --coral-50: #FAECE7; --coral-400: #D85A30;
+    --amber-100: #FAC775; --amber-400: #EF9F27; --amber-50: #FAEEDA;
+    --purple-400: #7F77DD; --purple-50: #EEEDFE;
+    --pink-400: #D4537E;
+    --green-400: #639922; --green-50: #EAF3DE;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-primary: #1e1e1c;
+      --bg-secondary: #2a2a28;
+      --bg-tertiary: #111110;
+      --text-primary: #f0f0ec;
+      --text-secondary: #a0a09a;
+      --text-muted: #666660;
+      --border-light: rgba(255,255,255,0.07);
+      --border-medium: rgba(255,255,255,0.13);
+      --border-strong: rgba(255,255,255,0.22);
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  .wrapper { max-width: 1280px; margin: 0 auto; padding: 0 20px 40px; }
+
+  /* HEADER */
+  .hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+    padding: 20px 0 16px;
+    border-bottom: 0.5px solid var(--border-light);
+    margin-bottom: 20px;
+  }
+  .hdr h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.4px; color: var(--text-primary); }
+  .hdr p  { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .badge {
+    font-size: 11px; font-weight: 500;
+    padding: 3px 11px; border-radius: 20px;
+    background: #EAF3DE; color: #3B6D11;
+  }
+  @media (prefers-color-scheme: dark) {
+    .badge { background: #1e3310; color: #97C459; }
+  }
+
+  /* NAV */
+  .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  .nav button {
+    font-size: 12px; font-weight: 500;
+    padding: 6px 16px;
+    border-radius: var(--radius-md);
+    border: 0.5px solid var(--border-medium);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .nav button:hover { background: var(--bg-secondary); color: var(--text-primary); }
+  .nav button.act {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  /* METRIC CARDS */
+  .metrics { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-bottom: 20px; }
+  @media (max-width: 640px) { .metrics { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  .mc { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 16px 18px; }
+  .mc .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 6px; }
+  .mc .val { font-size: 24px; font-weight: 600; color: var(--text-primary); }
+  .mc .sub { font-size: 11px; margin-top: 3px; }
+  .mc .sub.up { color: var(--red-600); }
+  .mc .sub.dn { color: var(--teal-600); }
+
+  /* GRID LAYOUTS */
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; margin-bottom: 14px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin-bottom: 14px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } .grid3 { grid-template-columns: 1fr; } }
+
+  /* PANELS */
+  .panel {
+    background: var(--bg-primary);
+    border: 0.5px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+  }
+  .panel.full { grid-column: 1 / -1; }
+  .panel-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+  .panel-sub  { font-size: 11px; color: var(--text-secondary); margin-bottom: 12px; }
+
+  /* LEGEND */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; font-size: 11px; color: var(--text-secondary); }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+
+  /* COUNTRY BARS */
+  .country-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 5px 0; border-bottom: 0.5px solid var(--border-light);
+  }
+  .country-row:last-child { border-bottom: none; }
+  .country-name { font-size: 12px; color: var(--text-primary); min-width: 110px; }
+  .bar-bg { flex: 1; background: var(--bg-secondary); border-radius: 2px; height: 6px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s cubic-bezier(.4,0,.2,1); }
+  .country-num { font-size: 11px; color: var(--text-secondary); min-width: 50px; text-align: right; }
+
+  /* VACCINATION BARS */
+  .vacc-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .vacc-name { font-size: 12px; color: var(--text-primary); min-width: 80px; }
+  .vacc-bg { flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 18px; overflow: hidden; position: relative; }
+  .vacc-fill { height: 100%; border-radius: 4px; transition: width 0.6s; }
+  .vacc-pct {
+    font-size: 10px; font-weight: 600; color: var(--text-primary);
+    position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+  }
+
+  /* TABS */
+  .tab-section { display: none; }
+  .tab-section.vis { display: block; }
+
+  /* MAP TOGGLE */
+  .map-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .map-btns button {
+    font-size: 11px; font-weight: 500; padding: 5px 14px;
+    border-radius: var(--radius-md); border: 0.5px solid var(--border-medium);
+    background: transparent; color: var(--text-secondary); cursor: pointer; transition: all 0.15s;
+  }
+  .map-btns button.act { background: var(--bg-secondary); color: var(--text-primary); border-color: var(--border-strong); }
+
+  /* HEATMAP */
+  #heatmapContainer { overflow-x: auto; padding-bottom: 4px; }
+  .hm-color-scale { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 10px; color: var(--text-secondary); }
+  .hm-color-scale div { display: flex; gap: 1px; }
+  .hm-swatch { width: 18px; height: 10px; border-radius: 1px; }
+
+  /* MAP LOADING */
+  #worldMap { width: 100%; min-height: 340px; }
+  #mapLegend { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 10px; color: var(--text-secondary); }
+  #mapLegend div { width: 22px; height: 11px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <div class="hdr">
+    <div>
+      <h1>COVID-19 Global Analytics Dashboard</h1>
+      <p>Pandemic trends — cases, mortality &amp; vaccination progress</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <span class="badge">Data snapshot: 2023</span>
+      <nav class="nav" id="mainNav">
+        <button class="act" onclick="switchTab('overview')">Overview</button>
+        <button onclick="switchTab('trends')">Trends</button>
+        <button onclick="switchTab('heatmap')">Heatmap</button>
+        <button onclick="switchTab('vaccination')">Vaccination</button>
+        <button onclick="switchTab('map')">Global map</button>
+      </nav>
+    </div>
+  </div>
+
+  <!-- METRIC CARDS -->
+  <div class="metrics">
+    <div class="mc"><div class="lbl">Total cases</div><div class="val">769M</div><div class="sub up">+2.1M last 30d</div></div>
+    <div class="mc"><div class="lbl">Deaths</div><div class="val">6.96M</div><div class="sub dn">CFR 0.91%</div></div>
+    <div class="mc"><div class="lbl">Vaccinated</div><div class="val">5.57B</div><div class="sub dn">70.4% of world</div></div>
+    <div class="mc"><div class="lbl">Recovered</div><div class="val">741M</div><div class="sub dn">96.4% recovery rate</div></div>
+  </div>
+
+  <!-- ============================== OVERVIEW ============================== -->
+  <div class="tab-section vis" id="tab-overview">
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-title">Top 10 countries by total cases</div>
+        <div style="margin-top:12px;" id="countryList"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Case fatality rate by region</div>
+        <div class="legend" style="margin-top:6px;">
+          <span><i style="background:#378ADD"></i>CFR %</span>
+          <span><i style="background:#E24B4A"></i>Deaths per 100k</span>
+        </div>
+        <div style="position:relative;height:240px;"><canvas id="cfrChart"></canvas></div>
+      </div>
+    </div>
+    <div class="grid3">
+      <div class="panel">
+        <div class="panel-title">New cases — 7-day avg</div>
+        <div style="position:relative;height:140px;margin-top:8px;"><canvas id="sparkChart1"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Daily deaths — 7-day avg</div>
+        <div style="position:relative;height:140px;margin-top:8px;"><canvas id="sparkChart2"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Test positivity rate (%)</div>
+        <div style="position:relative;height:140px;margin-top:8px;"><canvas id="sparkChart3"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== TRENDS ============================== -->
+  <div class="tab-section" id="tab-trends">
+    <div class="panel full" style="margin-bottom:14px;">
+      <div class="panel-title">Global daily new cases — time series (2020–2023)</div>
+      <div class="panel-sub">Bar = raw daily cases &nbsp;|&nbsp; Red line = 7-day avg &nbsp;|&nbsp; Green dashed = deaths ×10</div>
+      <div class="legend">
+        <span><i style="background:#378ADD"></i>Daily new cases</span>
+        <span><i style="background:#E24B4A"></i>7-day average</span>
+        <span><i style="background:#1D9E75"></i>Deaths ×10</span>
+      </div>
+      <div style="position:relative;height:290px;"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-title">Cumulative cases by income group</div>
+        <div style="position:relative;height:210px;margin-top:8px;"><canvas id="incomeChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Wave comparison — peak cases per million</div>
+        <div style="position:relative;height:210px;margin-top:8px;"><canvas id="waveChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== HEATMAP ============================== -->
+  <div class="tab-section" id="tab-heatmap">
+    <div class="panel full" style="margin-bottom:14px;">
+      <div class="panel-title">Monthly new cases heatmap — top 12 countries (2021–2023)</div>
+      <div class="panel-sub">Color intensity = new cases per million population. Darker = higher burden.</div>
+      <div id="heatmapContainer"></div>
+      <div class="hm-color-scale">
+        <span>Low</span>
+        <div>
+          <div class="hm-swatch" style="background:#E6F1FB;"></div>
+          <div class="hm-swatch" style="background:#B5D4F4;"></div>
+          <div class="hm-swatch" style="background:#85B7EB;"></div>
+          <div class="hm-swatch" style="background:#378ADD;"></div>
+          <div class="hm-swatch" style="background:#185FA5;"></div>
+          <div class="hm-swatch" style="background:#042C53;"></div>
+        </div>
+        <span>High</span>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-title">Weekly death rate heatmap — last 52 weeks</div>
+        <div id="weeklyHeatmap" style="margin-top:10px;"></div>
+        <div style="font-size:9px;color:var(--text-secondary);margin-top:6px;">Each cell = one day. Color = death rate intensity (green scale).</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Regional severity index by quarter</div>
+        <div style="position:relative;height:230px;margin-top:8px;"><canvas id="severityChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== VACCINATION ============================== -->
+  <div class="tab-section" id="tab-vaccination">
+    <div class="grid2" style="margin-bottom:14px;">
+      <div class="panel">
+        <div class="panel-title">Vaccination coverage by country (%)</div>
+        <div style="margin-top:12px;" id="vaccBars"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Vaccine doses administered over time</div>
+        <div class="legend" style="margin-top:6px;">
+          <span><i style="background:#1D9E75"></i>1st dose</span>
+          <span><i style="background:#0F6E56"></i>Fully vaccinated</span>
+          <span><i style="background:#9FE1CB"></i>Booster</span>
+        </div>
+        <div style="position:relative;height:230px;"><canvas id="vaccTimeChart"></canvas></div>
+      </div>
+    </div>
+    <div class="grid3">
+      <div class="panel">
+        <div class="panel-title">Vaccine brand distribution</div>
+        <div style="position:relative;height:160px;"><canvas id="vaccBrandChart"></canvas></div>
+        <div class="legend" style="margin-top:8px;">
+          <span><i style="background:#378ADD"></i>Pfizer 33%</span>
+          <span><i style="background:#1D9E75"></i>AZ 21%</span>
+          <span><i style="background:#E24B4A"></i>Moderna 17%</span>
+          <span><i style="background:#EF9F27"></i>J&amp;J 11%</span>
+          <span><i style="background:#7F77DD"></i>Others 18%</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Vaccination vs case reduction</div>
+        <div style="position:relative;height:160px;"><canvas id="vaccEffChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Coverage by income group</div>
+        <div style="position:relative;height:160px;"><canvas id="vaccEquityChart"></canvas></div>
+        <div class="legend" style="margin-top:8px;">
+          <span><i style="background:#1D9E75"></i>High</span>
+          <span><i style="background:#9FE1CB"></i>Upper-mid</span>
+          <span><i style="background:#EF9F27"></i>Lower-mid</span>
+          <span><i style="background:#FAC775"></i>Low</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== GLOBAL MAP ============================== -->
+  <div class="tab-section" id="tab-map">
+    <div class="panel full" style="margin-bottom:14px;">
+      <div class="panel-title">Global COVID-19 choropleth map</div>
+      <div class="map-btns" id="mapSelect">
+        <button class="act" onclick="setMapMode('cases',this)">Total cases</button>
+        <button onclick="setMapMode('deaths',this)">Deaths per 100k</button>
+        <button onclick="setMapMode('vacc',this)">Vaccination %</button>
+      </div>
+      <div id="worldMap"></div>
+      <div id="mapLegend"></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-title">Cases per million — top vs bottom 5</div>
+        <div style="position:relative;height:210px;margin-top:8px;"><canvas id="mapBarChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Continent-level comparison</div>
+        <div style="position:relative;height:210px;margin-top:8px;"><canvas id="continentChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /wrapper -->
+
+<script>
+/* =========================================================
+   HELPERS
+   ========================================================= */
+const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+const textCol = isDark ? '#a0a09a' : '#666660';
+const gridCol = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+
+const BASE_OPTS = (yLabel = '') => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: { mode: 'index', intersect: false }
+  },
+  scales: {
+    x: { ticks: { color: textCol, font: { size: 10 } }, grid: { color: gridCol } },
+    y: {
+      ticks: { color: textCol, font: { size: 10 } },
+      grid: { color: gridCol },
+      title: { display: !!yLabel, text: yLabel, color: textCol, font: { size: 10 } }
+    }
+  }
+});
+
+/* =========================================================
+   TAB SWITCHING
+   ========================================================= */
+let mapDrawn = false, hmDrawn = false, trendsDrawn = false, vaccDrawn = false;
+
+function switchTab(t) {
+  document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('vis'));
+  document.getElementById('tab-' + t).classList.add('vis');
+  const keys = ['overview', 'trends', 'heatmap', 'vaccination', 'map'];
+  document.querySelectorAll('#mainNav button').forEach((b, i) => b.classList.toggle('act', keys[i] === t));
+  if (t === 'map'        && !mapDrawn)    { drawWorldMap(); }
+  if (t === 'heatmap'    && !hmDrawn)     { buildHeatmap(); buildWeeklyHeatmap(); hmDrawn = true; }
+  if (t === 'trends'     && !trendsDrawn) { buildTrends();  trendsDrawn = true; }
+  if (t === 'vaccination'&& !vaccDrawn)   { buildVacc();    vaccDrawn = true; }
+}
+
+/* =========================================================
+   OVERVIEW — country bars
+   ========================================================= */
+const countries = [
+  { name: 'United States', cases: 103e6, color: '#378ADD' },
+  { name: 'India',         cases:  45e6, color: '#E24B4A' },
+  { name: 'Japan',         cases:  33e6, color: '#1D9E75' },
+  { name: 'France',        cases:  40e6, color: '#7F77DD' },
+  { name: 'Germany',       cases:  38e6, color: '#EF9F27' },
+  { name: 'Brazil',        cases:  37e6, color: '#D4537E' },
+  { name: 'South Korea',   cases:  31e6, color: '#378ADD' },
+  { name: 'Italy',         cases:  25e6, color: '#E24B4A' },
+  { name: 'United Kingdom',cases:  24e6, color: '#1D9E75' },
+  { name: 'Russia',        cases:  22e6, color: '#7F77DD' },
+];
+const maxCases = Math.max(...countries.map(c => c.cases));
+const cl = document.getElementById('countryList');
+countries.forEach(c => {
+  const row = document.createElement('div');
+  row.className = 'country-row';
+  row.innerHTML = `
+    <span class="country-name">${c.name}</span>
+    <div class="bar-bg"><div class="bar-fill" style="width:${(c.cases / maxCases * 100).toFixed(1)}%;background:${c.color}"></div></div>
+    <span class="country-num">${(c.cases / 1e6).toFixed(0)}M</span>`;
+  cl.appendChild(row);
+});
+
+/* CFR chart */
+new Chart(document.getElementById('cfrChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Europe', 'N.America', 'S.America', 'Asia', 'Africa', 'Oceania'],
+    datasets: [
+      { label: 'CFR %',          data: [1.2, 1.1, 2.1, 0.7, 1.8, 0.3], backgroundColor: '#378ADD', yAxisID: 'y'  },
+      { label: 'Deaths per 100k',data: [220, 190, 280,  90, 140,  18],  backgroundColor: '#E24B4A', yAxisID: 'y1' }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+    scales: {
+      x:  { ticks: { color: textCol, font: { size: 10 } }, grid: { color: gridCol } },
+      y:  { ticks: { color: textCol, font: { size: 10 } }, grid: { color: gridCol }, position: 'left',  title: { display: true, text: 'CFR %', color: textCol, font: { size: 10 } } },
+      y1: { ticks: { color: textCol, font: { size: 10 } }, grid: { display: false }, position: 'right', title: { display: true, text: 'Deaths / 100k', color: textCol, font: { size: 10 } } }
+    }
+  }
+});
+
+/* Sparklines */
+const sparkMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+[
+  [document.getElementById('sparkChart1'), [180,210,490,320,280,350,600,820,540,380,290,210], '#378ADD'],
+  [document.getElementById('sparkChart2'), [3.2,3.8,8.1,5.4,4.9,4.2,6.8,9.1,6.2,4.1,3.0,2.1], '#E24B4A'],
+  [document.getElementById('sparkChart3'), [12,14,22,18,15,14,19,25,18,13,11,9], '#1D9E75'],
+].forEach(([canvas, data, color]) => {
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: sparkMonths,
+      datasets: [{ data, borderColor: color, borderWidth: 2, pointRadius: 0, fill: true, backgroundColor: color + '22', tension: 0.4 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textCol, font: { size: 9 } }, grid: { display: false } },
+        y: { ticks: { color: textCol, font: { size: 9 } }, grid: { color: gridCol } }
+      }
+    }
+  });
+});
+
+/* =========================================================
+   TRENDS
+   ========================================================= */
+function buildTrends() {
+  const months = [];
+  for (let y = 2020; y <= 2023; y++)
+    for (let m = 1; m <= 12; m++) {
+      if (y === 2023 && m > 6) break;
+      months.push(`${y}-${String(m).padStart(2,'0')}`);
+    }
+  const seed = [8,12,45,82,40,28,22,19,16,42,88,95,120,140,110,160,210,280,350,290,240,180,140,100,90,120,160,180,350,590,820,580,420,280,200,180,150,130,110,90,80,70];
+  const avg7 = seed.map((_, i) => {
+    const slice = seed.slice(Math.max(0, i - 3), i + 4);
+    return Math.round(slice.reduce((a, b) => a + b, 0) / slice.length);
+  });
+
+  new Chart(document.getElementById('trendChart'), {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets: [
+        { type: 'bar',  label: 'Daily new cases', data: seed, backgroundColor: '#378ADD33', yAxisID: 'y' },
+        { type: 'line', label: '7-day avg', data: avg7, borderColor: '#E24B4A', borderWidth: 2, pointRadius: 0, tension: 0.4, yAxisID: 'y' },
+        { type: 'line', label: 'Deaths ×10', data: seed.map(v => Math.round(v * 0.009 * 10)), borderColor: '#1D9E75', borderWidth: 1.5, pointRadius: 0, tension: 0.4, yAxisID: 'y', borderDash: [4, 3] }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+      scales: {
+        x: { ticks: { color: textCol, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 18 }, grid: { color: gridCol } },
+        y: { ticks: { color: textCol, font: { size: 10 } }, grid: { color: gridCol }, title: { display: true, text: 'Cases (×100k)', color: textCol, font: { size: 10 } } }
+      }
+    }
+  });
+
+  const qLabels = ['2020Q1','Q2','Q3','Q4','2021Q1','Q2','Q3','Q4','2022Q1','Q2','Q3','Q4','2023Q1','Q2'];
+  new Chart(document.getElementById('incomeChart'), {
+    type: 'line',
+    data: {
+      labels: qLabels,
+      datasets: [
+        { label: 'High income',   data: [10,80,180,280,350,420,580,640,700,720,730,740,760,769], borderColor: '#378ADD', tension: 0.4, pointRadius: 0, borderWidth: 2 },
+        { label: 'Upper-mid',     data: [5,40,120,200,260,340,480,530,570,580,590,600,610,620],  borderColor: '#1D9E75', tension: 0.4, pointRadius: 0, borderWidth: 2 },
+        { label: 'Lower-mid',     data: [2,20,60,100,140,200,280,330,360,370,375,380,385,390],   borderColor: '#EF9F27', tension: 0.4, pointRadius: 0, borderWidth: 2 },
+        { label: 'Low income',    data: [1,8,20,35,55,80,100,120,130,135,137,139,140,142],        borderColor: '#E24B4A', tension: 0.4, pointRadius: 0, borderWidth: 2 }
+      ]
+    },
+    options: { ...BASE_OPTS('Cumulative cases (M)') }
+  });
+
+  new Chart(document.getElementById('waveChart'), {
+    type: 'radar',
+    data: {
+      labels: ['Wave 1 (2020)', 'Alpha (2020Q4)', 'Delta (2021Q3)', 'Omicron (2021Q4)', 'BA.5 (2022Q3)', 'BQ.1 (2022Q4)'],
+      datasets: [
+        { label: 'Europe',   data: [320,680,1200,4800,2100,980], borderColor: '#378ADD', backgroundColor: '#378ADD22', pointRadius: 3 },
+        { label: 'Americas', data: [400,720,1100,5200,1800,820], borderColor: '#E24B4A', backgroundColor: '#E24B4A22', pointRadius: 3 },
+        { label: 'Asia',     data: [120,300,800,3600,1400,640],  borderColor: '#1D9E75', backgroundColor: '#1D9E7522', pointRadius: 3 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { r: { ticks: { color: textCol, font: { size: 9 } }, grid: { color: gridCol }, pointLabels: { color: textCol, font: { size: 9 } } } }
+    }
+  });
+}
+
+/* =========================================================
+   HEATMAP
+   ========================================================= */
+function buildHeatmap() {
+  const ctries = ['USA','India','Brazil','France','Germany','UK','Italy','Russia','S.Korea','Spain','Australia','Canada'];
+  const blueRamp = ['#E6F1FB','#B5D4F4','#85B7EB','#378ADD','#185FA5','#042C53'];
+  const mons = [];
+  for (let y = 2021; y <= 2023; y++)
+    for (let m = 1; m <= 12; m++) {
+      if (y === 2023 && m > 6) break;
+      mons.push(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1]);
+    }
+
+  function rndVal(ci, mi) {
+    return Math.min(1, Math.abs(Math.sin(ci * 0.7 + mi * 0.3)) * 0.4 + Math.abs(Math.sin((mi + ci * 2) * 0.25)) * 0.6 + Math.random() * 0.12);
+  }
+  function gc(v) { return blueRamp[Math.min(5, Math.floor(v * 6))]; }
+
+  const cont = document.getElementById('heatmapContainer');
+  let html = '<div style="display:flex;gap:0;">';
+  html += '<div style="padding-top:20px;">';
+  ctries.forEach(c => { html += `<div style="font-size:10px;color:var(--text-secondary);height:20px;display:flex;align-items:center;padding-right:8px;white-space:nowrap;">${c}</div>`; });
+  html += '</div><div style="flex:1;">';
+  html += '<div style="display:flex;gap:2px;margin-bottom:3px;">';
+  mons.forEach(m => { html += `<div style="min-width:19px;font-size:8px;color:var(--text-secondary);text-align:center;">${m}</div>`; });
+  html += '</div>';
+  ctries.forEach((_, ci) => {
+    html += '<div style="display:flex;gap:2px;margin-bottom:2px;">';
+    mons.forEach((_, mi) => {
+      const v = rndVal(ci, mi);
+      html += `<div style="min-width:19px;height:18px;border-radius:2px;background:${gc(v)};"></div>`;
+    });
+    html += '</div>';
+  });
+  html += '</div></div>';
+  cont.innerHTML = html;
+
+  new Chart(document.getElementById('severityChart'), {
+    type: 'bar',
+    data: {
+      labels: ['21Q1','21Q2','21Q3','21Q4','22Q1','22Q2','22Q3','22Q4','23Q1','23Q2'],
+      datasets: [
+        { label: 'Europe',   data: [68,52,44,88,72,38,35,42,28,22], backgroundColor: '#378ADD' },
+        { label: 'Americas', data: [74,58,48,82,78,42,32,38,25,18], backgroundColor: '#E24B4A' },
+        { label: 'Asia',     data: [42,38,62,78,82,44,28,32,18,14], backgroundColor: '#1D9E75' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+      scales: {
+        x: { ticks: { color: textCol, font: { size: 8 }, maxRotation: 45 }, grid: { color: gridCol } },
+        y: { ticks: { color: textCol, font: { size: 9 } }, grid: { color: gridCol } }
+      }
+    }
+  });
+}
+
+function buildWeeklyHeatmap() {
+  const greenRamp = ['#E1F5EE','#9FE1CB','#5DCAA5','#1D9E75','#0F6E56','#085041'];
+  function gc(v) { return greenRamp[Math.min(5, Math.floor(v * 6))]; }
+  const cont = document.getElementById('weeklyHeatmap');
+  const days = ['M','T','W','T','F','S','S'];
+  let html = '<div style="display:flex;gap:1px;">';
+  html += '<div style="display:flex;flex-direction:column;justify-content:space-between;padding-right:5px;height:' + (7*13) + 'px;">';
+  days.forEach(d => { html += `<div style="font-size:8px;color:var(--text-secondary);height:12px;display:flex;align-items:center;">${d}</div>`; });
+  html += '</div>';
+  for (let w = 0; w < 52; w++) {
+    html += '<div style="display:flex;flex-direction:column;gap:1px;">';
+    for (let d = 0; d < 7; d++) {
+      const v = Math.min(1, Math.abs(Math.sin(w * 0.2 + d)) * 0.5 + 0.5 + Math.random() * 0.15);
+      html += `<div style="width:10px;height:12px;border-radius:1px;background:${gc(v)};"></div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  cont.innerHTML = html;
+}
+
+/* =========================================================
+   VACCINATION
+   ========================================================= */
+function buildVacc() {
+  const vaccData = [
+    { name: 'UAE',      pct: 98, col: '#085041' },
+    { name: 'Portugal', pct: 95, col: '#0F6E56' },
+    { name: 'Chile',    pct: 93, col: '#1D9E75' },
+    { name: 'China',    pct: 92, col: '#1D9E75' },
+    { name: 'Spain',    pct: 90, col: '#5DCAA5' },
+    { name: 'France',   pct: 78, col: '#5DCAA5' },
+    { name: 'Brazil',   pct: 80, col: '#9FE1CB' },
+    { name: 'USA',      pct: 70, col: '#9FE1CB' },
+    { name: 'India',    pct: 67, col: '#EF9F27' },
+    { name: 'Nigeria',  pct: 12, col: '#FAC775' },
+  ];
+  const vb = document.getElementById('vaccBars');
+  vaccData.forEach(v => {
+    vb.innerHTML += `<div class="vacc-bar">
+      <span class="vacc-name">${v.name}</span>
+      <div class="vacc-bg">
+        <div class="vacc-fill" style="width:${v.pct}%;background:${v.col};"></div>
+        <span class="vacc-pct">${v.pct}%</span>
+      </div>
+    </div>`;
+  });
+
+  const qLabels = ['2021Q1','Q2','Q3','Q4','2022Q1','Q2','Q3','Q4','2023Q1','Q2'];
+  new Chart(document.getElementById('vaccTimeChart'), {
+    type: 'line',
+    data: {
+      labels: qLabels,
+      datasets: [
+        { label: '1st dose',          data: [180,820,1800,2800,3400,3800,4100,4300,4500,4600], borderColor: '#1D9E75', fill: true, backgroundColor: '#1D9E7522', tension: 0.4, pointRadius: 0 },
+        { label: 'Fully vaccinated',  data: [0,200,900,1800,2600,3200,3600,3800,4000,4100],   borderColor: '#0F6E56', fill: true, backgroundColor: '#0F6E5622', tension: 0.4, pointRadius: 0 },
+        { label: 'Booster',           data: [0,0,0,200,600,1100,1500,1800,2100,2300],          borderColor: '#9FE1CB', fill: true, backgroundColor: '#9FE1CB22', tension: 0.4, pointRadius: 0 }
+      ]
+    },
+    options: { ...BASE_OPTS('Doses (million)') }
+  });
+
+  new Chart(document.getElementById('vaccBrandChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Pfizer', 'AstraZeneca', 'Moderna', 'J&J', 'Others'],
+      datasets: [{ data: [33, 21, 17, 11, 18], backgroundColor: ['#378ADD','#1D9E75','#E24B4A','#EF9F27','#7F77DD'], borderWidth: 0 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: false } } }
+  });
+
+  new Chart(document.getElementById('vaccEffChart'), {
+    type: 'line',
+    data: {
+      labels: ['0%','10%','20%','30%','40%','50%','60%','70%','80%','90%'],
+      datasets: [
+        { label: 'Case reduction',  data: [0,8,18,28,40,52,63,72,78,82], borderColor: '#378ADD', tension: 0.4, pointRadius: 3, borderWidth: 2 },
+        { label: 'Death reduction', data: [0,12,25,42,58,70,80,87,91,94],borderColor: '#1D9E75', tension: 0.4, pointRadius: 3, borderWidth: 2 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+      scales: {
+        x: { title: { display: true, text: '% vaccinated', color: textCol, font: { size: 9 } }, ticks: { color: textCol, font: { size: 9 } }, grid: { color: gridCol } },
+        y: { title: { display: true, text: '% reduction',  color: textCol, font: { size: 9 } }, ticks: { color: textCol, font: { size: 9 } }, grid: { color: gridCol } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('vaccEquityChart'), {
+    type: 'bar',
+    data: {
+      labels: ['21Q2','Q3','Q4','22Q1','Q2','Q3','Q4','23Q1'],
+      datasets: [
+        { label: 'High income', data: [58,72,82,88,92,95,96,97], backgroundColor: '#1D9E75' },
+        { label: 'Upper-mid',   data: [20,38,52,63,72,78,82,85], backgroundColor: '#9FE1CB' },
+        { label: 'Lower-mid',   data: [5,12,22,32,42,52,58,63],  backgroundColor: '#EF9F27' },
+        { label: 'Low income',  data: [1,3,5,7,9,10,11,12],       backgroundColor: '#FAC775' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+      scales: {
+        x: { ticks: { color: textCol, font: { size: 8 }, maxRotation: 45 }, grid: { color: gridCol } },
+        y: { ticks: { color: textCol, font: { size: 9 } }, grid: { color: gridCol }, max: 100 }
+      }
+    }
+  });
+}
+
+/* =========================================================
+   GLOBAL MAP (D3 + TopoJSON)
+   ========================================================= */
+let currentMapMode = 'cases';
+
+function setMapMode(mode, btn) {
+  currentMapMode = mode;
+  document.querySelectorAll('#mapSelect button').forEach(b => {
+    b.classList.toggle('act', b === btn);
+  });
+  if (mapDrawn) drawWorldMap();
+}
+
+function drawWorldMap() {
+  mapDrawn = true;
+  const container = document.getElementById('worldMap');
+  container.innerHTML = '<p style="padding:1rem;font-size:12px;color:var(--text-secondary);">Loading world map…</p>';
+
+  /* Approximate ISO numeric → value mappings */
+  const casesByISO  = {'840':103,'356':45,'250':40,'276':38,'076':37,'410':31,'392':33,'380':25,'643':22,'826':24,'036':11,'124':4,'484':7,'710':4,'566':0.3,'818':5,'504':1.2};
+  const deathsByISO = {'840':230,'356':53,'250':170,'276':170,'076':310,'410':65,'392':52,'380':290,'643':280,'826':230,'036':28,'124':45,'484':220,'710':140,'566':150,'818':70};
+  const vaccByISO   = {'840':70,'356':67,'250':78,'276':76,'076':80,'410':88,'392':82,'380':90,'643':55,'826':72,'036':85,'124':82,'484':60,'710':32,'566':12,'818':45};
+
+  const dataMap = currentMapMode === 'cases' ? casesByISO : currentMapMode === 'deaths' ? deathsByISO : vaccByISO;
+  const maxVal  = currentMapMode === 'cases' ? 110 : currentMapMode === 'deaths' ? 320 : 100;
+  const ramp    = currentMapMode === 'vacc'
+    ? ['#E1F5EE','#9FE1CB','#5DCAA5','#1D9E75','#0F6E56','#085041']
+    : currentMapMode === 'deaths'
+    ? ['#FAECE7','#F5C4B3','#F0997B','#D85A30','#993C1D','#4A1B0C']
+    : ['#E6F1FB','#B5D4F4','#85B7EB','#378ADD','#185FA5','#042C53'];
+
+  function getColor(id) {
+    const iso = String(id).padStart(3, '0');
+    const v   = dataMap[iso] || 0;
+    const t   = Math.min(1, v / maxVal);
+    return ramp[Math.min(5, Math.floor(t * 6))];
+  }
+
+  const w = container.offsetWidth || 800;
+  const h = Math.max(340, Math.round(w * 0.5));
+  container.innerHTML = '';
+
+  const svg  = d3.select('#worldMap').append('svg').attr('viewBox', `0 0 ${w} ${h}`).attr('width', '100%');
+  const proj = d3.geoNaturalEarth1().scale(w / 6.3).translate([w / 2, h / 2]);
+  const path = d3.geoPath(proj);
+
+  d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
+    .then(world => {
+      svg.selectAll('path')
+        .data(topojson.feature(world, world.objects.countries).features)
+        .join('path')
+        .attr('d', path)
+        .attr('fill', d => getColor(d.id))
+        .attr('stroke', isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.10)')
+        .attr('stroke-width', 0.4);
+
+      const legEl = document.getElementById('mapLegend');
+      const labels = currentMapMode === 'cases'  ? ['Low','','','','','High (100M+)']
+                   : currentMapMode === 'deaths' ? ['Low','','','','','300+ /100k']
+                   :                               ['<20%','','','','','>80%'];
+      legEl.innerHTML = `<span>${labels[0]}</span>` +
+        ramp.map(c => `<div style="background:${c};"></div>`).join('') +
+        `<span>${labels[5]}</span>`;
+    })
+    .catch(() => {
+      container.innerHTML = '<p style="padding:1rem;font-size:12px;color:var(--text-secondary);">Map data could not be loaded. Please check your internet connection.</p>';
+    });
+
+  /* Side charts under map */
+  new Chart(document.getElementById('mapBarChart'), {
+    type: 'bar',
+    data: {
+      labels: ['Cyprus','Denmark','Netherlands','France','Belgium','Chad','Burkina Faso','Niger','Mali','Ethiopia'],
+      datasets: [{ data: [49000,42000,41000,39000,38000,420,380,350,320,280], backgroundColor: ['#378ADD','#378ADD','#378ADD','#378ADD','#378ADD','#EF9F27','#EF9F27','#EF9F27','#EF9F27','#EF9F27'] }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textCol, font: { size: 9 } }, grid: { color: gridCol } },
+        y: { ticks: { color: textCol, font: { size: 9 } }, grid: { display: false } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('continentChart'), {
+    type: 'polarArea',
+    data: {
+      labels: ['Europe','Americas','Asia','Africa','Oceania','Middle East'],
+      datasets: [{ data: [240,190,220,28,12,38], backgroundColor: ['#378ADD99','#E24B4A99','#1D9E7599','#EF9F2799','#7F77DD99','#D4537E99'], borderWidth: 0 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { font: { size: 10 }, color: textCol } } },
+      scales: { r: { ticks: { display: false }, grid: { color: gridCol } } }
+    }
+  });
+}
+</script>
+</body>
+</html>
